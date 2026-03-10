@@ -1,0 +1,35 @@
+-- 1. Création de l'environnement de travail
+CREATE DATABASE IF NOT EXISTS ISD_PROJECT;
+USE DATABASE ISD_PROJECT;
+
+USE SCHEMA PUBLIC;
+
+-- 2. Création de la table avec la structure exacte de tes données
+CREATE TABLE IF NOT EXISTS ISD_PROJECT.PUBLIC.TICKETS_SUPPORTS_DATA (
+    SUBJECT VARCHAR,
+    BODY VARCHAR,
+    ANSWER VARCHAR,
+    TYPE VARCHAR,
+    QUEUE VARCHAR,
+    PRIORITY VARCHAR,
+    LANGUAGE VARCHAR,
+    VERSION NUMBER,
+    TAG_1 VARCHAR, TAG_2 VARCHAR, TAG_3 VARCHAR, TAG_4 VARCHAR,
+    TAG_5 VARCHAR, TAG_6 VARCHAR, TAG_7 VARCHAR, TAG_8 VARCHAR
+);
+
+
+-- 2. Création du Cortex Search Service
+CREATE OR REPLACE CORTEX SEARCH SERVICE support_tickets_search_service
+ON body_answer
+ATTRIBUTES subject, type, queue, priority, language
+WAREHOUSE = COMPUTE_WH -- 
+TARGET_LAG = '1 minute'
+AS (
+    SELECT 
+        subject, type, queue, priority, language, body, answer,
+        -- Concaténation riche pour le contexte sémantique
+        CONCAT('SUBJECT: ', IFNULL(subject, ''), '\nPROBLEM: ', IFNULL(body, ''), '\nSOLUTION: ', IFNULL(answer, '')) as body_answer
+    FROM TICKETS_SUPPORTS_DATA
+    WHERE body IS NOT NULL AND answer IS NOT NULL
+);

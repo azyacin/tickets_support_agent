@@ -1,0 +1,10 @@
+name: app_environment
+channels:
+  - snowflake
+dependencies:
+  - langchain=1.2.7
+  - langgraph=1.0.7
+  - langgraph-sdk=0.3.3
+  - python=3.11.*
+  - snowflake-snowpark-python=
+  - streamlit=*
