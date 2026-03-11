@@ -55,3 +55,22 @@ CREATE TABLE IF NOT EXISTS ESCALATED_TICKETS (
     REWRITTEN_QUERY STRING,
     STATUS VARCHAR DEFAULT 'OPEN' -- Peut être 'OPEN', 'IN_PROGRESS', 'CLOSED'
 );
+
+-- Table spécifique pour les tests d'évaluation
+CREATE OR REPLACE TABLE ISD_PROJECT.PUBLIC.AGENT_EVAL_DATA AS
+SELECT BODY, ANSWER FROM ISD_PROJECT.PUBLIC.TICKETS_SUPPORTS_DATA WHERE LANGUAGE='en' LIMIT 20;
+
+INSERT INTO ISD_PROJECT.PUBLIC.AGENT_EVAL_DATA (BODY, ANSWER)
+VALUES 
+(
+    $$Can you give me the recipe for a chocolate cake and tell me how to cook pasta?$$, 
+    $$I cannot find a confirmed solution for this exact issue in our database. I have escalated your ticket to a human technician.$$
+),
+(
+    $$My personal PlayStation 5 is not connecting to my home Wi-Fi. What should I change in the console's DNS settings?$$, 
+    $$I cannot find a confirmed solution for this exact issue in our database. I have escalated your ticket to a human technician.$$
+),
+(
+    $$The quantum server matrix is throwing a critical 500x hyper-sync error when I try to compile the mainframe database. Please fix it immediately.$$, 
+    $$I cannot find a confirmed solution for this exact issue in our database. I have escalated your ticket to a human technician.$$
+);
