@@ -8,3 +8,9 @@ dependencies:
   - python=3.11.*
   - snowflake-snowpark-python=
   - streamlit=*
+  - trulens-connectors-snowflake=2.7.0
+  - trulens-core=2.7.0
+  - trulens-dashboard=2.7.0
+  - trulens-feedback=2.7.0
+  - trulens-otel-semconv=2.7.0
+  - trulens-providers-cortex=2.7.0

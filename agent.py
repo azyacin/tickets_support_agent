@@ -15,7 +15,6 @@ def init_connection():
 
 session = init_connection()
 
-
 # 2. STATE DEFINITION (MEMORY)
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
@@ -23,8 +22,7 @@ class AgentState(TypedDict):
     context: str              
     is_relevant: bool         
     grader_raw_response: str  
-    selected_model: str
-
+    selected_model: str       
 
 # 3. LANGGRAPH NODES DEFINITION
 def route_query(state: AgentState) -> Literal["chat", "retrieve_flow"]:
@@ -42,7 +40,6 @@ def route_query(state: AgentState) -> Literal["chat", "retrieve_flow"]:
     MANDATORY INSTRUCTION: Answer with ONLY ONE word: 'chat' or 'retrieve'."""
     
     escaped_prompt = prompt.replace("'", "''")
-    # L'agent lit le modèle depuis son état (avec un fallback par défaut)
     model = state.get("selected_model", "llama3.1-70b")
     llm_query = f"SELECT SNOWFLAKE.CORTEX.COMPLETE('{model}', '{escaped_prompt}')"
     
@@ -53,7 +50,6 @@ def route_query(state: AgentState) -> Literal["chat", "retrieve_flow"]:
     except Exception:
         pass
     return "retrieve_flow"
-
 
 def basic_chat_node(state: AgentState):
     user_message = state["messages"][-1].content
@@ -74,45 +70,55 @@ def basic_chat_node(state: AgentState):
         "grader_raw_response": "N/A"
     }
 
-
 def query_rewriter_node(state: AgentState):
     messages = state["messages"]
+    
+    # S'il n'y a qu'un seul message, pas besoin de réécrire
     if len(messages) <= 1:
         return {"standalone_query": messages[-1].content}
     
     history = "\n".join([f"{'Client' if isinstance(m, HumanMessage) else 'Agent'}: {m.content}" for m in messages[-5:-1]])
     current_question = messages[-1].content
     
-    prompt = f"""Here is the history of a conversation with technical support:
+    prompt = f"""You are an expert technical query rewriter for an IT search engine. 
+    Your task is to rewrite the LATEST USER MESSAGE so it becomes completely standalone and optimized for a database search, using context from the CONVERSATION HISTORY.
+    
+    CONVERSATION HISTORY:
     {history}
     
-    Last user message: {current_question}
+    LATEST USER MESSAGE:
+    {current_question}
     
-    INSTRUCTION: Rewrite the last message so that it can be understood on its own (without the history), keeping all the key technical terms of the problem. 
-    If the last message is already clear and standalone, output it exactly as it is.
-    Return ONLY the rewritten question, without any introduction or explanation."""
+    CRITICAL RULES:
+    1. RESOLVE REFERENCES: Replace pronouns (it, this, that, the issue) with the specific hardware, software, or technical entities they refer to in the history.
+    2. PRESERVE TECHNICAL DATA: Keep ALL exact error codes, version numbers, device models, and specific symptoms. Do not summarize them.
+    3. NO CHITCHAT: Strip away polite filler. Focus ONLY on the technical problem or question.
+    4. ZERO META-TEXT: DO NOT output "Here is the rewritten query:", "The user is asking...", or wrap your answer in quotes. Output strictly the final search string.
+    5. PASSTHROUGH RULE: If the latest message is just a greeting (e.g., "hello", "thanks") or is already 100% clear on its own, output it EXACTLY as it is, word-for-word.
     
-    escaped_prompt = prompt.replace("'", "''")
-    llm_query = f"SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3.1-8b', '{escaped_prompt}')"
+    OUTPUT:"""
+    
+    llm_query = f"SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3.1-8b', $${prompt}$$)"
     
     try:
-        standalone_query = session.sql(llm_query).collect()[0][0].strip()
+        raw_output = session.sql(llm_query).collect()[0][0].strip()
+        standalone_query = raw_output.strip('"\', ')
     except Exception:
         standalone_query = current_question 
         
     return {"standalone_query": standalone_query}
 
-
 def retrieve_node(state: AgentState):
     standalone_query = state["standalone_query"]
+    
     search_payload = {
         "query": standalone_query,
         "columns": ["SUBJECT", "BODY", "ANSWER", "PRIORITY", "LANGUAGE"],
         "limit": 3
     }
         
-    payload_str = json.dumps(search_payload).replace("'", "''") 
-    sql_query = f"SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('support_tickets_search_service', '{payload_str}')"
+    payload_str = json.dumps(search_payload)
+    sql_query = f"SELECT SNOWFLAKE.CORTEX.SEARCH_PREVIEW('support_tickets_search_service', $${payload_str}$$)"
     
     try:
         result = session.sql(sql_query).collect()[0][0]
@@ -132,7 +138,6 @@ def retrieve_node(state: AgentState):
         context_str = "No similar ticket found."
 
     return {"context": context_str}
-
 
 def grade_documents_node(state: AgentState):
     query = state["standalone_query"]
@@ -179,9 +184,11 @@ def generate_node(state: AgentState):
     Use the following CONTEXT from past tickets to help the user. 
     
     RULES:
-    1. If the CONTEXT contains a direct solution, give it to the user clearly.
-    2. If the CONTEXT contains troubleshooting questions asked by previous technicians (e.g., asking for a model number, error code, or connection type), ASK those same questions to the user to investigate their issue.
-    3. Do not mention that you are reading from a context or past tickets. Just act as the helpful agent.
+    1. PRIORITY 1 - DIRECT SOLUTION: If the CONTEXT contains a direct solution or workaround for the user's problem, give it clearly and STOP. Do NOT ask any troubleshooting questions if you are already providing a solution.
+    2. PRIORITY 2 - DIAGNOSIS: ONLY IF there is NO direct solution in the CONTEXT, look for troubleshooting questions asked by previous technicians. Ask those same questions to the user to investigate. BUT ONLY IF the user hasn't already provided that information. Do not ask for details they already gave you.
+    3. NEVER leave sentences unfinished. If the CONTEXT mentions a workaround or recommendation but does not provide the details, DO NOT mention it. Just apologize for the issue and end the message politely.
+    4. Do not invent ETAs (Estimated Times of Arrival) for issue resolutions if they are not explicitly in the CONTEXT.
+    5. Do not mention that you are reading from a context or past tickets. Just act as the helpful agent.
     
     CONTEXT: {context}
     QUESTION: {query}

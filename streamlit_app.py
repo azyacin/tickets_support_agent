@@ -3,9 +3,9 @@ from langchain_core.messages import HumanMessage, AIMessage
 from snowflake.snowpark.context import get_active_session
 from agent import compiled_agent
 
-# ==========================================
+# Import de ton agent LangGraph (celui avec les @instrument)
+
 # 1. INITIALISATION DE LA SESSION SNOWFLAKE
-# ==========================================
 try:
     session = get_active_session()
 except Exception:
@@ -33,7 +33,7 @@ with st.sidebar:
         st.rerun()
     
     st.markdown("---")
-    st.markdown(f"**Utilisateur connecté :** `{current_user_id}`")
+    st.markdown(f"**Utilisateur :** `{current_user_id}`")
 
 st.title("🤖 AI Support Agent")
 
@@ -63,14 +63,12 @@ if user_input := st.chat_input("Describe your technical issue..."):
                 "selected_model": st.session_state.selected_model
             }
             
-            # Invocation de l'agent
             final_state = compiled_agent.invoke(initial_state)
             ai_response = final_state["messages"][-1].content
             
-            # Récupération des données pour les logs
             standalone_query = final_state.get("standalone_query", "")
             is_relevant = final_state.get("is_relevant", False)
-            is_escalated = not is_relevant # Si non pertinent = escaladé
+            is_escalated = not is_relevant 
             
             st.markdown(ai_response)
             
